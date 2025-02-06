@@ -1,30 +1,12 @@
-const {sql}= require('../config/db');
-const User= require('../models/User');
-const bcrypt = require('bcryptjs');
+const { sql } = require("../config/db");
+const User = require("../models/User");
+const bcrypt = require("bcryptjs");
 
-// Obtener todos los usuarios
-// const getAllUsers = async(req, res) =>{
-//     try{
-//         const result = await sql.query('SELECT * FROM Usuarios');
-//         const users = result.recordset.map(user => new User(
-//             user.UserID,
-//             user.Username,
-//             user.Email,
-//             user.PasswordHash,
-//             user.RoleName,
-//             user.CreateAt
-//         ));
-//         res.status(200).json(users);
-//     }
-//     catch(error){
-//         res.status(500).json({ message: 'Error al obtener los usuarios', error: error.message });
-//     }
-// };
 // Obtener todos los usuarios
 const getAllUsers = async (req, res) => {
   try {
-      // Consulta SQL con JOIN
-      const result = await sql.query(`
+    // Consulta SQL con JOIN
+    const result = await sql.query(`
           SELECT 
               u.UserID, 
               u.Username, 
@@ -36,23 +18,26 @@ const getAllUsers = async (req, res) => {
           JOIN Roles r ON u.RoleID = r.RoleID
       `);
 
-      // Mapear los resultados a instancias de la clase User
-      const users = result.recordset.map(user => new User(
+    // Mapear los resultados a instancias de la clase User
+    const users = result.recordset.map(
+      (user) =>
+        new User(
           user.UserID,
           user.Username,
           user.Email,
           user.PasswordHash,
           user.RoleName, // Ahora incluye RoleName correctamente
           user.CreatedAt // Incluye CreatedAt correctamente
-      ));
+        )
+    );
 
-      res.status(200).json(users);
+    res.status(200).json(users);
   } catch (error) {
-      res.status(500).json({ message: 'Error al obtener los usuarios', error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error al obtener los usuarios", error: error.message });
   }
 };
-
-
 
 const getUserById = async (req, res) => {
   const { id } = req.params;
@@ -64,9 +49,9 @@ const getUserById = async (req, res) => {
       FROM Usuarios
       INNER JOIN Roles ON Usuarios.RoleID = Roles.RoleID
       WHERE Usuarios.UserID = ${id}`;
-      
+
     if (result.recordset.length === 0) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
+      return res.status(404).json({ message: "Usuario no encontrado" });
     }
 
     // Crear el objeto con roleName en lugar de roleId
@@ -81,66 +66,80 @@ const getUserById = async (req, res) => {
 
     res.status(200).json(user);
   } catch (error) {
-    res.status(500).json({ message: 'Error al obtener el usuario', error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error al obtener el usuario", error: error.message });
   }
 };
 
-
 // Actualizar un usuario
 const updateUser = async (req, res) => {
-    const { id } = req.params;
-    const { username, email, password, roleName } = req.body;
+  const { username, email, roleName, password } = req.body;
 
-    // Validación de campos
-    if (!username || !email || !password || !roleName) {
-        return res.status(400).json({ message: 'Todos los campos son obligatorios' });
+  if (!username || !email || !roleName) {
+    return res.status(400).json({
+      message: "Todos los campos son obligatorios excepto la contraseña",
+    });
+  }
+
+  try {
+    // Verificar si el usuario existe
+    const result =
+      await sql.query`SELECT * FROM dbo.Usuarios WHERE UserID = ${req.params.id}`;
+    const user = result.recordset[0];
+
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
     }
 
-    try {
-        // Encriptar la contraseña
-        const hashedPassword = await bcrypt.hash(password, 10);
+    // Verificar si el username o email ya existen en otro usuario
+    const checkExisting = await sql.query`
+      SELECT * FROM dbo.Usuarios 
+      WHERE (Username = ${username} OR Email = ${email})
+      AND UserID != ${req.params.id}
+    `;
 
-        // Obtener el RoleID basado en el roleName
-        const roleResult = await sql.query`SELECT RoleID FROM Roles WHERE RoleName = ${roleName}`;
-        if (roleResult.recordset.length === 0) {
-            return res.status(404).json({ message: 'Rol no encontrado' });
-        }
-        const roleID = roleResult.recordset[0].RoleID;
-
-        // Actualizar el usuario en la base de datos
-        const result = await sql.query`
-            UPDATE Usuarios
-            SET 
-                Username = ${username}, 
-                Email = ${email}, 
-                PasswordHash = ${hashedPassword}, 
-                RoleID = ${roleID}
-            WHERE UserID = ${id}
-        `;
-
-        if (result.rowsAffected[0] === 0) {
-            return res.status(404).json({ message: 'Usuario no encontrado' });
-        }
-
-        res.status(200).json({ message: 'Usuario actualizado exitosamente' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error al actualizar el usuario', error: error.message });
+    if (checkExisting.recordset.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "Ya  existe este  usuario o email" });
     }
+
+    // Actualizar los datos del usuario
+    let hashedPassword = user.PasswordHash; // Mantener la contraseña existente
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10); // Encriptar nueva contraseña si se envía
+    }
+
+    await sql.query`
+      UPDATE dbo.Usuarios
+      SET Username = ${username}, Email = ${email}, RoleID = (SELECT RoleID FROM dbo.Roles WHERE RoleName = ${roleName}), PasswordHash = ${hashedPassword}
+      WHERE UserID = ${req.params.id}
+    `;
+
+    res.status(200).json({ message: "Usuario actualizado correctamente" });
+  } catch (error) {
+    console.error("Error al actualizar usuario:", error.message);
+    res
+      .status(500)
+      .json({ message: `Error al actualizar usuario: ${error.message}` });
+  }
 };
 
-
-  // Eliminar un usuario
+// Eliminar un usuario
 const deleteUser = async (req, res) => {
-    const { id } = req.params;
-    try {
-      const result = await sql.query`DELETE FROM Usuarios WHERE UserID = ${id}`;
-      if (result.rowsAffected[0] === 0) {
-        return res.status(404).json({ message: 'Usuario no encontrado' });
-      }
-      res.status(200).json({ message: 'Usuario eliminado exitosamente' });
-    } catch (error) {
-      res.status(500).json({ message: 'Error al eliminar el usuario', error: error.message });
+  const { id } = req.params;
+  try {
+    const result = await sql.query`DELETE FROM Usuarios WHERE UserID = ${id}`;
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
     }
-  };
+    res.status(200).json({ message: "Usuario eliminado exitosamente" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error al eliminar el usuario", error: error.message });
+  }
+};
 
-  module.exports = { getAllUsers, getUserById, updateUser, deleteUser };
+module.exports = { getAllUsers, getUserById, updateUser, deleteUser };

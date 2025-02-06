@@ -1,0 +1,25 @@
+body {
+    font-family: "Roboto", sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+  }
+  
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+
+ 
+
+  /* Estilos para el modal de Material-UI */
+.MuiDialog-root {
+  z-index: 1300 !important; /* Asegúrate de que el modal tenga un z-index definido */
+}
+
+/* Estilos personalizados para SweetAlert2 */
+.swal2-container {
+  z-index: 1500 !important; /* Asegúrate de que SweetAlert2 tenga un z-index mayor */
+}
